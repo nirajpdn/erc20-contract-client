@@ -5,10 +5,18 @@ import Button from "@/components/Button";
 import Input from "@/components/Input";
 import Head from "next/head";
 import Table from "@/components/Table";
+import { noProvider } from "@/utils/response";
+import TxnInfo from "@/components/TxnInfo";
+export interface TxnInterface {
+  txHash: string;
+  amount: string;
+  to: string;
+  from: string;
+}
 export default function App() {
-  const [txs, setTxs] = React.useState([]);
+  const [txs, setTxs] = React.useState<TxnInterface[]>([]);
   const [contractListened, setContractListened] = React.useState();
-
+  const transactionContainerRef = React.useRef<HTMLDivElement>(null);
   const [loadingInfo, setLoadingInfo] = React.useState({
     getTokenInfo: false,
     balanceInquiry: false,
@@ -78,7 +86,11 @@ export default function App() {
       const provider = new ethers.providers.Web3Provider(
         (window as any).ethereum
       );
+      if (!provider) {
+        throw noProvider();
+      }
       await provider.send("eth_requestAccounts", []);
+
       const erc20 = new ethers.Contract(
         contractInfo.address,
         erc20abi,
@@ -105,11 +117,15 @@ export default function App() {
       const provider = new ethers.providers.Web3Provider(
         (window as any).ethereum
       );
+      if (!provider) {
+        throw noProvider();
+      }
       await provider.send("eth_requestAccounts", []);
       const signer = provider.getSigner();
       const erc20 = new ethers.Contract(contractInfo.address, erc20abi, signer);
       await erc20.transfer(recipient, amount);
-      alert("Success");
+      setTransferInfo({ ...transferInfo, amount: "", recipient: "" });
+      alert("Success, Transaction in process...");
     } catch (e: any) {
       alert(e.reason);
     } finally {
@@ -131,6 +147,38 @@ export default function App() {
     },
   ];
 
+  React.useEffect(() => {
+    if (contractInfo.address) {
+      const provider = new ethers.providers.Web3Provider(
+        (window as any).ethereum
+      );
+      if (!provider) {
+        throw noProvider();
+      }
+      const erc20 = new ethers.Contract(
+        contractInfo.address,
+        erc20abi,
+        provider
+      );
+      erc20.on(
+        "Transfer",
+        (from: string, to: string, amount: number, event: any) => {
+          console.log(event);
+          setTxs((currentTxs) => [
+            ...currentTxs,
+            {
+              txHash: event.transactionHash,
+              amount: String(amount),
+              from,
+              to,
+            },
+          ]);
+          transactionContainerRef &&
+            transactionContainerRef.current?.scrollIntoView();
+        }
+      );
+    }
+  }, [contractInfo.address]);
   return (
     <>
       <Head>
@@ -210,6 +258,21 @@ export default function App() {
               {loadingInfo.fundTransfer ? "Mining..." : "Transfer"}
             </Button>
           </form>
+          <div className="mt-10" ref={transactionContainerRef}>
+            <h2 className="text-center font-semibold text-lg">
+              Recent transactions
+            </h2>
+            {!txs.length && (
+              <p className="text-sm text-center text-gray-600">
+                No transactions done yet
+              </p>
+            )}
+            {txs.map((txn, index) => (
+              <div className="mt-4" key={index}>
+                <TxnInfo txn={txn} />
+              </div>
+            ))}
+          </div>
         </div>
       </main>
     </>
